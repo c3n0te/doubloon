@@ -1,23 +1,29 @@
-# This file was automatically generated.
-
 [package]
 edition = "2024"
 name = "doubloon"
 version = "0.1.0"
 
 [dependencies]
+chrono = { version = "0.4.44", default-features = false }
 cortex-m = { version = "0.7.7", features = ["inline-asm", "critical-section-single-core"] }
 cortex-m-rt = "0.7.5"
 defmt = { version = "1.0.1", optional = true }
 defmt-rtt = { version = "1.1.0", optional = true }
+ds3231 = { version = "0.3.0", features = ["async", "defmt", "temperature_f32"] }
+embassy-embedded-hal = { version = "0.6.0", features = ["defmt"] }
 embassy-executor = { version = "0.10.0", features = ["defmt", "executor-thread", "platform-cortex-m"] }
 embassy-futures = "0.1.2"
-embassy-stm32 = { version = "0.6.0", features = ["memory-x", "stm32f303vc", "time-driver-any", "exti", "unstable-pac"] }
+embassy-stm32 = { version = "0.6.0", features = ["memory-x", "stm32f303vc", "rt", "time-driver-any", "exti", "unstable-pac"] }
 embassy-sync = "0.8.0"
 embassy-time = { version = "0.5.1", features = ["tick-hz-32_768"] }
+fusion-ahrs = "0.4.0"
 heapless = "0.9.2"
+i3g4250d = "0.3.0"
+lsm303agr = { version = "1.1.0", features = ["async"] }
+nalgebra = { version = "0.34.2", default-features = false, features = ["libm"] }
 panic-halt = "1.0.0"
 panic-probe = { version = "1.0.0", features = ["print-defmt"], optional = true }
+static_cell = "2.1.1"
 
 [[bin]]
 name = "doubloon"
