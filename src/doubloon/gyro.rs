@@ -5,9 +5,8 @@ use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use i3g4250d::I16x3;
 
-const CAL_SAMPLE_SIZE: usize = 1000;
-
-async fn calibrate_gyro(i3g4250d: &'static GyroMutex) -> Result<I16x3, &'static str> {
+async fn calibrate_gyroscope(i3g4250d: &'static GyroMutex) -> Result<I16x3, &'static str> {
+    const CAL_SAMPLE_SIZE: u32 = 1000;
     defmt::info!(
         "Calibrating I3G4250d gyroscope with {} samples. ETA is 10 seconds. Hold the gyro flat to the earth's surface.",
         CAL_SAMPLE_SIZE
@@ -75,7 +74,7 @@ pub async fn read_gyro_every_n_milliseconds(
     n_millis: u64,
     signal: &'static Signal<CriticalSectionRawMutex, CalibrationState>,
 ) {
-    match calibrate_gyro(i3g4250d).await {
+    match calibrate_gyroscope(i3g4250d).await {
         Ok(cal_offsets) => {
             signal.signal(CalibrationState::Start);
             loop {
