@@ -13,6 +13,7 @@ use embassy_stm32::time::Hertz;
 use embassy_stm32::{bind_interrupts, dma, peripherals};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, blocking_mutex::raw::NoopRawMutex, mutex::Mutex,
+    signal::Signal,
 };
 use i3g4250d::I3G4250D;
 #[cfg(not(feature = "defmt"))]
@@ -21,6 +22,11 @@ use static_cell::StaticCell;
 #[cfg(feature = "defmt")]
 use {defmt_rtt as _, panic_probe as _};
 mod doubloon;
+
+enum CalibrationState {
+    Start,
+    Stop,
+}
 
 bind_interrupts!(struct Irqs {
     I2C1_EV => i2c::EventInterruptHandler<peripherals::I2C1>;
@@ -46,9 +52,10 @@ async fn main(spawner: Spawner) {
         Default::default(),
     );
 
+    static MAGCAL_SIGNAL: Signal<CriticalSectionRawMutex, CalibrationState> = Signal::new();
     static I2C_CELL: StaticCell<SharedI2CBusMutex> = StaticCell::new();
     let i2c_bus = I2C_CELL.init(Mutex::new(i2c));
-    spawner.spawn(read_magnetometer_every_n_milliseconds(i2c_bus, 1000).unwrap());
+    spawner.spawn(read_magnetometer_every_n_milliseconds(i2c_bus, 1000, &MAGCAL_SIGNAL).unwrap());
     spawner.spawn(read_accelerometer_every_n_milliseconds(i2c_bus, 1000).unwrap());
 
     let mut spi_config = spi::Config::default();
@@ -59,7 +66,7 @@ async fn main(spawner: Spawner) {
     if let Some(i3g4250d) = I3G4250D::new(spi, cs_pin).ok() {
         static I3G4250D_CELL: StaticCell<GyroMutex> = StaticCell::new();
         let i3g4250d = I3G4250D_CELL.init(Mutex::new(i3g4250d));
-        spawner.spawn(read_gyro_every_n_milliseconds(i3g4250d, 1000).unwrap());
+        spawner.spawn(read_gyro_every_n_milliseconds(i3g4250d, 1000, &MAGCAL_SIGNAL).unwrap());
     } else {
         defmt::error!("Could not establish SPI connection to i3g4250 gyro.");
     }

@@ -1,7 +1,8 @@
-use crate::SharedI2CBusMutex;
+use crate::{CalibrationState, SharedI2CBusMutex};
 use embassy_embedded_hal::shared_bus::asynch::i2c::I2cDevice;
 use embassy_stm32::{i2c, i2c::I2c, mode::Async};
-use embassy_sync::blocking_mutex::raw::NoopRawMutex;
+use embassy_sync::blocking_mutex::raw::{CriticalSectionRawMutex, NoopRawMutex};
+use embassy_sync::signal::Signal;
 use embassy_time::Delay;
 use embassy_time::Timer;
 use lsm303agr::Error as Lsm303agrError;
@@ -72,18 +73,32 @@ async fn read_magnetometer(lsm303agr: &mut Magnetometer) {
     }
 }
 
+async fn calibrate_magnetometer() {
+    defmt::info!("Beginning Mag Calibration");
+}
+
 #[embassy_executor::task]
 pub async fn read_magnetometer_every_n_milliseconds(
     i2c_bus: &'static SharedI2CBusMutex,
     n_millis: u64,
+    signal: &'static Signal<CriticalSectionRawMutex, CalibrationState>,
 ) {
     let shared_i2c_device = I2cDevice::new(i2c_bus);
     let mut lsm303agr = Lsm303agr::new_with_i2c(shared_i2c_device);
-    lsm303agr.init().await.unwrap();
+    if lsm303agr.init().await.is_err() {
+        defmt::error!("Error initializing magnetometer.");
+    }
 
-    loop {
-        Timer::after_millis(n_millis).await;
-        read_magnetometer(&mut lsm303agr).await;
+    let cal_start = signal.wait().await;
+    match cal_start {
+        CalibrationState::Start => {
+            calibrate_magnetometer().await;
+            loop {
+                Timer::after_millis(n_millis).await;
+                read_magnetometer(&mut lsm303agr).await;
+            }
+        }
+        CalibrationState::Stop => defmt::error!("Error signaling calibration start"),
     }
 }
 
@@ -113,11 +128,17 @@ pub async fn read_accelerometer_every_n_milliseconds(
 ) {
     let shared_i2c_device = I2cDevice::new(i2c_bus);
     let mut lsm303agr = Lsm303agr::new_with_i2c(shared_i2c_device);
-    lsm303agr.init().await.unwrap();
-    lsm303agr
+    if lsm303agr.init().await.is_err() {
+        defmt::error!("Error initializing accelerometer.");
+    }
+
+    if lsm303agr
         .set_accel_mode_and_odr(&mut Delay, AccelMode::Normal, AccelOutputDataRate::Hz100)
         .await
-        .unwrap();
+        .is_err()
+    {
+        defmt::error!("Error setting accelerometer params.");
+    }
 
     loop {
         Timer::after_millis(n_millis).await;

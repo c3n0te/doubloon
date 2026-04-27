@@ -1,5 +1,7 @@
-use crate::GyroMutex;
+use crate::{CalibrationState, GyroMutex};
 use embassy_stm32::spi::Error as SpiError;
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use i3g4250d::I16x3;
 
@@ -53,11 +55,12 @@ async fn read_gyro(i3g4250d: &'static GyroMutex, cal_offsets: &I16x3) {
                 y: gyro_all.y - cal_offsets.y,
                 z: gyro_all.z - cal_offsets.z,
             };
+
             defmt::info!(
-                "Gyroscope: x = {} rad/s, y = {} rad/s, z = {} rad/s",
-                calibrated.x as f32 * core::f32::consts::PI / 180.0,
-                calibrated.y as f32 * core::f32::consts::PI / 180.0,
-                calibrated.z as f32 * core::f32::consts::PI / 180.0
+                "Gyroscope: x = {} °/s, y = {} °/s, z = {} °/s",
+                calibrated.x,
+                calibrated.y,
+                calibrated.z
             );
         }
         Err(err) => {
@@ -67,13 +70,21 @@ async fn read_gyro(i3g4250d: &'static GyroMutex, cal_offsets: &I16x3) {
 }
 
 #[embassy_executor::task]
-pub async fn read_gyro_every_n_milliseconds(i3g4250d: &'static GyroMutex, n_millis: u64) {
+pub async fn read_gyro_every_n_milliseconds(
+    i3g4250d: &'static GyroMutex,
+    n_millis: u64,
+    signal: &'static Signal<CriticalSectionRawMutex, CalibrationState>,
+) {
     match calibrate_gyro(i3g4250d).await {
-        Ok(cal_offsets) => loop {
-            Timer::after_millis(n_millis).await;
-            read_gyro(i3g4250d, &cal_offsets).await;
-        },
+        Ok(cal_offsets) => {
+            signal.signal(CalibrationState::Start);
+            loop {
+                Timer::after_millis(n_millis).await;
+                read_gyro(i3g4250d, &cal_offsets).await;
+            }
+        }
         Err(e) => {
+            signal.signal(CalibrationState::Stop);
             defmt::error!("{}", e);
         }
     }
