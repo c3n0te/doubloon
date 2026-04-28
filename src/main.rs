@@ -1,9 +1,8 @@
 #![no_std]
 #![no_main]
-use crate::doubloon::compass::{
-    read_accelerometer_every_n_milliseconds, read_magnetometer_every_n_milliseconds,
-};
-use crate::doubloon::gyro::read_gyro_every_n_milliseconds;
+use crate::doubloon::ahrs::ahrs;
+use crate::doubloon::compass::{read_accelerometer, read_magnetometer};
+use crate::doubloon::gyro::read_gyro;
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::i2c::{self, I2c};
@@ -16,6 +15,7 @@ use embassy_sync::{
     signal::Signal,
 };
 use i3g4250d::I3G4250D;
+use nalgebra::Vector3;
 #[cfg(not(feature = "defmt"))]
 use panic_halt as _;
 use static_cell::StaticCell;
@@ -52,11 +52,14 @@ async fn main(spawner: Spawner) {
         Default::default(),
     );
 
-    static MAGCAL_SIGNAL: Signal<CriticalSectionRawMutex, CalibrationState> = Signal::new();
+    static MAG_MEASUREMENT: Signal<CriticalSectionRawMutex, Vector3<f32>> = Signal::new();
+    static GYRO_MEASUREMENT: Signal<CriticalSectionRawMutex, Vector3<f32>> = Signal::new();
+    static ACCEL_MEASUREMENT: Signal<CriticalSectionRawMutex, Vector3<f32>> = Signal::new();
+    static MAGCAL: Signal<CriticalSectionRawMutex, CalibrationState> = Signal::new();
     static I2C_CELL: StaticCell<SharedI2CBusMutex> = StaticCell::new();
     let i2c_bus = I2C_CELL.init(Mutex::new(i2c));
-    spawner.spawn(read_magnetometer_every_n_milliseconds(i2c_bus, 1000, &MAGCAL_SIGNAL).unwrap());
-    spawner.spawn(read_accelerometer_every_n_milliseconds(i2c_bus, 1000).unwrap());
+    spawner.spawn(read_magnetometer(i2c_bus, 15, &MAGCAL, &MAG_MEASUREMENT).unwrap());
+    spawner.spawn(read_accelerometer(i2c_bus, 15, &ACCEL_MEASUREMENT).unwrap());
 
     let mut spi_config = spi::Config::default();
     spi_config.frequency = Hertz(1_000_000);
@@ -66,8 +69,10 @@ async fn main(spawner: Spawner) {
     if let Some(i3g4250d) = I3G4250D::new(spi, cs_pin).ok() {
         static I3G4250D_CELL: StaticCell<GyroMutex> = StaticCell::new();
         let i3g4250d = I3G4250D_CELL.init(Mutex::new(i3g4250d));
-        spawner.spawn(read_gyro_every_n_milliseconds(i3g4250d, 1000, &MAGCAL_SIGNAL).unwrap());
+        spawner.spawn(read_gyro(i3g4250d, 15, &MAGCAL, &GYRO_MEASUREMENT).unwrap());
     } else {
         defmt::error!("Could not establish SPI connection to i3g4250 gyro.");
     }
+
+    spawner.spawn(ahrs(&MAG_MEASUREMENT, &GYRO_MEASUREMENT, &ACCEL_MEASUREMENT).unwrap());
 }

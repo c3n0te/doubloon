@@ -4,6 +4,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use i3g4250d::I16x3;
+use nalgebra::Vector3;
 
 async fn calibrate_gyroscope(i3g4250d: &'static GyroMutex) -> Result<I16x3, &'static str> {
     const CAL_SAMPLE_SIZE: u32 = 1000;
@@ -46,45 +47,41 @@ fn get_spi_error_text(err: &SpiError) -> &'static str {
     }
 }
 
-async fn read_gyro(i3g4250d: &'static GyroMutex, cal_offsets: &I16x3) {
-    match i3g4250d.lock().await.gyro() {
-        Ok(gyro_all) => {
-            let calibrated = I16x3 {
-                x: gyro_all.x - cal_offsets.x,
-                y: gyro_all.y - cal_offsets.y,
-                z: gyro_all.z - cal_offsets.z,
-            };
-
-            defmt::info!(
-                "Gyroscope: x = {} °/s, y = {} °/s, z = {} °/s",
-                calibrated.x,
-                calibrated.y,
-                calibrated.z
-            );
-        }
-        Err(err) => {
-            defmt::error!("ERROR reading gyro values: {}", get_spi_error_text(&err));
-        }
-    }
-}
-
 #[embassy_executor::task]
-pub async fn read_gyro_every_n_milliseconds(
+pub async fn read_gyro(
     i3g4250d: &'static GyroMutex,
     n_millis: u64,
-    signal: &'static Signal<CriticalSectionRawMutex, CalibrationState>,
+    magcal: &'static Signal<CriticalSectionRawMutex, CalibrationState>,
+    gyro_meas: &'static Signal<CriticalSectionRawMutex, Vector3<f32>>,
 ) {
-    match calibrate_gyroscope(i3g4250d).await {
-        Ok(cal_offsets) => {
-            signal.signal(CalibrationState::Start);
-            loop {
-                Timer::after_millis(n_millis).await;
-                read_gyro(i3g4250d, &cal_offsets).await;
+    let Ok(cal_offsets) = calibrate_gyroscope(i3g4250d).await else {
+        magcal.signal(CalibrationState::Stop);
+        defmt::error!("Error calibrating gyroscope");
+        return;
+    };
+
+    magcal.signal(CalibrationState::Start);
+    loop {
+        Timer::after_millis(n_millis).await;
+        match i3g4250d.lock().await.gyro() {
+            Ok(gyro_all) => {
+                let calibrated = I16x3 {
+                    x: gyro_all.x - cal_offsets.x,
+                    y: gyro_all.y - cal_offsets.y,
+                    z: gyro_all.z - cal_offsets.z,
+                };
+
+                let gyro = Vector3::new(
+                    calibrated.x as f32,
+                    calibrated.y as f32,
+                    calibrated.z as f32,
+                );
+
+                gyro_meas.signal(gyro);
             }
-        }
-        Err(e) => {
-            signal.signal(CalibrationState::Stop);
-            defmt::error!("{}", e);
+            Err(err) => {
+                defmt::error!("ERROR reading gyro values: {}", get_spi_error_text(&err));
+            }
         }
     }
 }
