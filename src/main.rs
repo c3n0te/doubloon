@@ -58,8 +58,8 @@ async fn main(spawner: Spawner) {
     static MAGCAL: Signal<CriticalSectionRawMutex, CalibrationState> = Signal::new();
     static I2C_CELL: StaticCell<SharedI2CBusMutex> = StaticCell::new();
     let i2c_bus = I2C_CELL.init(Mutex::new(i2c));
-    spawner.spawn(read_magnetometer(i2c_bus, 15, &MAGCAL, &MAG_MEASUREMENT).unwrap());
-    spawner.spawn(read_accelerometer(i2c_bus, 15, &ACCEL_MEASUREMENT).unwrap());
+    spawner.spawn(read_magnetometer(i2c_bus, 10, &MAGCAL, &MAG_MEASUREMENT).unwrap());
+    spawner.spawn(read_accelerometer(i2c_bus, 10, &ACCEL_MEASUREMENT).unwrap());
 
     let mut spi_config = spi::Config::default();
     spi_config.frequency = Hertz(1_000_000);
@@ -69,7 +69,7 @@ async fn main(spawner: Spawner) {
     if let Some(i3g4250d) = I3G4250D::new(spi, cs_pin).ok() {
         static I3G4250D_CELL: StaticCell<GyroMutex> = StaticCell::new();
         let i3g4250d = I3G4250D_CELL.init(Mutex::new(i3g4250d));
-        spawner.spawn(read_gyro(i3g4250d, 15, &MAGCAL, &GYRO_MEASUREMENT).unwrap());
+        spawner.spawn(read_gyro(i3g4250d, 10, &MAGCAL, &GYRO_MEASUREMENT).unwrap());
     } else {
         defmt::error!("Could not establish SPI connection to i3g4250 gyro.");
     }

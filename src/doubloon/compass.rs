@@ -98,9 +98,11 @@ async fn calibrate_magnetometer(lsm303agr: &mut Magnetometer) -> (Vector3<f32>, 
     let hard_iron_x = (x.iter().max_by(|x, y| x.total_cmp(y)).unwrap()
         + x.iter().min_by(|x, y| x.total_cmp(y)).unwrap())
         / 2.0;
+
     let hard_iron_y = (y.iter().max_by(|x, y| x.total_cmp(y)).unwrap()
         + y.iter().min_by(|x, y| x.total_cmp(y)).unwrap())
         / 2.0;
+
     let hard_iron_z = (z.iter().max_by(|x, y| x.total_cmp(y)).unwrap()
         + z.iter().min_by(|x, y| x.total_cmp(y)).unwrap())
         / 2.0;

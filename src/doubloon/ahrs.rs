@@ -1,6 +1,5 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
-use embassy_time::Timer;
 use fusion_ahrs::Ahrs;
 use nalgebra::Vector3;
 
@@ -50,7 +49,5 @@ pub async fn ahrs(
             pitch.to_degrees(),
             yaw.to_degrees()
         );
-
-        Timer::after_millis(10).await;
     }
 }

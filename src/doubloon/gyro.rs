@@ -4,12 +4,13 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::Timer;
 use i3g4250d::I16x3;
+use i3g4250d::{Bandwidth, Odr, Scale};
 use nalgebra::Vector3;
 
 async fn calibrate_gyroscope(i3g4250d: &'static GyroMutex) -> Result<I16x3, &'static str> {
     const CAL_SAMPLE_SIZE: u32 = 1000;
     defmt::info!(
-        "Calibrating I3G4250d gyroscope with {} samples. ETA is 10 seconds. Hold the gyro flat to the earth's surface.",
+        "Calibrating I3G4250d gyroscope with {} samples. ETA is 10 seconds. Hold the gyro flat to the Earth's surface.",
         CAL_SAMPLE_SIZE
     );
 
@@ -29,7 +30,7 @@ async fn calibrate_gyroscope(i3g4250d: &'static GyroMutex) -> Result<I16x3, &'st
                 average.y = (y_sum / CAL_SAMPLE_SIZE as i32) as i16;
                 average.z = (z_sum / CAL_SAMPLE_SIZE as i32) as i16;
             }
-            Err(_) => return Err("ERROR while calibrating gyro! Could not read gyro data."),
+            Err(_) => return Err("ERROR calibrating gyro, could not read gyro data."),
         }
 
         Timer::after_millis(10).await;
@@ -54,6 +55,23 @@ pub async fn read_gyro(
     magcal: &'static Signal<CriticalSectionRawMutex, CalibrationState>,
     gyro_meas: &'static Signal<CriticalSectionRawMutex, Vector3<f32>>,
 ) {
+    if i3g4250d.lock().await.set_odr(Odr::Hz100).is_err() {
+        defmt::error!("Error setting gyro ODR")
+    };
+
+    if i3g4250d.lock().await.set_scale(Scale::Dps500).is_err() {
+        defmt::error!("Error setting gyro Scale")
+    };
+
+    if i3g4250d
+        .lock()
+        .await
+        .set_bandwidth(Bandwidth::Medium)
+        .is_err()
+    {
+        defmt::error!("Error setting gyro Bandwidth")
+    };
+
     let Ok(cal_offsets) = calibrate_gyroscope(i3g4250d).await else {
         magcal.signal(CalibrationState::Stop);
         defmt::error!("Error calibrating gyroscope");
@@ -66,9 +84,9 @@ pub async fn read_gyro(
         match i3g4250d.lock().await.gyro() {
             Ok(gyro_all) => {
                 let calibrated = I16x3 {
-                    x: gyro_all.x - cal_offsets.x,
-                    y: gyro_all.y - cal_offsets.y,
-                    z: gyro_all.z - cal_offsets.z,
+                    x: gyro_all.x.saturating_sub(cal_offsets.x),
+                    y: gyro_all.y.saturating_sub(cal_offsets.y),
+                    z: gyro_all.z.saturating_sub(cal_offsets.z),
                 };
 
                 let gyro = Vector3::new(
