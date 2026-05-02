@@ -1,6 +1,6 @@
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
-use fusion_ahrs::Ahrs;
+use fusion_ahrs::{Ahrs, AhrsSettings, Convention};
 use nalgebra::Vector3;
 
 #[embassy_executor::task]
@@ -10,7 +10,9 @@ pub async fn ahrs(
     accel: &'static Signal<CriticalSectionRawMutex, Vector3<f32>>,
 ) {
     const DELTA_TIME: f32 = 0.01;
-    let mut ahrs = Ahrs::new();
+    let mut settings = AhrsSettings::default();
+    settings.convention = Convention::Enu;
+    let mut ahrs = Ahrs::with_settings(settings);
 
     loop {
         let magnetometer = mag.wait().await;

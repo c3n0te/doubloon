@@ -58,8 +58,8 @@ async fn main(spawner: Spawner) {
     static MAGCAL: Signal<CriticalSectionRawMutex, CalibrationState> = Signal::new();
     static I2C_CELL: StaticCell<SharedI2CBusMutex> = StaticCell::new();
     let i2c_bus = I2C_CELL.init(Mutex::new(i2c));
-    spawner.spawn(read_magnetometer(i2c_bus, 10, &MAGCAL, &MAG_MEASUREMENT).unwrap());
     spawner.spawn(read_accelerometer(i2c_bus, 10, &ACCEL_MEASUREMENT).unwrap());
+    spawner.spawn(read_magnetometer(i2c_bus, 10, &MAGCAL, &MAG_MEASUREMENT).unwrap());
 
     let mut spi_config = spi::Config::default();
     spi_config.frequency = Hertz(1_000_000);

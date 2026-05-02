@@ -8,7 +8,8 @@ use embassy_time::Timer;
 use heapless::Vec;
 use lsm303agr::Error as Lsm303agrError;
 use lsm303agr::{
-    AccelMode, AccelOutputDataRate, Lsm303agr, interface::I2cInterface, mode::MagOneShot,
+    AccelMode, AccelOutputDataRate, Lsm303agr, MagMode, MagOutputDataRate, interface::I2cInterface,
+    mode::MagOneShot,
 };
 use nalgebra::Vector3;
 
@@ -141,18 +142,29 @@ pub async fn read_magnetometer(
 ) {
     let shared_i2c_device = I2cDevice::new(i2c_bus);
     let mut lsm303agr = Lsm303agr::new_with_i2c(shared_i2c_device);
-    if lsm303agr.init().await.is_err() {
-        defmt::error!("Error initializing magnetometer.");
+    if lsm303agr.mag_enable_low_pass_filter().await.is_err() {
+        defmt::error!("Error initializing magnetometer low-pass filter");
+    }
+
+    if lsm303agr
+        .set_mag_mode_and_odr(
+            &mut Delay,
+            MagMode::HighResolution,
+            MagOutputDataRate::Hz100,
+        )
+        .await
+        .is_err()
+    {
+        defmt::error!("Error setting mag Mode and ODR.");
     }
 
     let cal_start = magcal.wait().await;
-    let (mut hard_iron, mut soft_iron): (Vector3<f32>, Vector3<f32>) =
-        (Vector3::zeros(), Vector3::zeros());
+    let (mut hard_iron, mut soft_iron) = (Vector3::zeros(), Vector3::zeros());
     match cal_start {
         CalibrationState::Start => {
             (hard_iron, soft_iron) = calibrate_magnetometer(&mut lsm303agr).await;
         }
-        CalibrationState::Stop => defmt::error!("Error signaling calibration start"),
+        CalibrationState::Stop => defmt::error!("Error signaling mag calibration start"),
     }
 
     loop {
@@ -160,8 +172,8 @@ pub async fn read_magnetometer(
         match lsm303agr.magnetic_field().await {
             Ok(magnetometer) => {
                 let mag = Vector3::new(
-                    ((magnetometer.x_nt() as f32 / 1000.0) - hard_iron.x) * soft_iron.x,
                     ((magnetometer.y_nt() as f32 / 1000.0) - hard_iron.y) * soft_iron.y,
+                    ((-magnetometer.x_nt() as f32 / 1000.0) - hard_iron.x) * soft_iron.x,
                     ((magnetometer.z_nt() as f32 / 1000.0) - hard_iron.z) * soft_iron.z,
                 );
 
@@ -202,8 +214,8 @@ pub async fn read_accelerometer(
         match lsm303agr.acceleration().await {
             Ok(accel) => {
                 let accel = Vector3::new(
-                    accel.x_mg() as f32 / 1000.0,
                     accel.y_mg() as f32 / 1000.0,
+                    -accel.x_mg() as f32 / 1000.0,
                     accel.z_mg() as f32 / 1000.0,
                 );
 

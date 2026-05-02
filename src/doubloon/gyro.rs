@@ -55,6 +55,9 @@ pub async fn read_gyro(
     magcal: &'static Signal<CriticalSectionRawMutex, CalibrationState>,
     gyro_meas: &'static Signal<CriticalSectionRawMutex, Vector3<f32>>,
 ) {
+    //sensitivity must match Scale as specified in datasheet.
+    const SENSITIVITY: f32 = 0.0175;
+
     if i3g4250d.lock().await.set_odr(Odr::Hz100).is_err() {
         defmt::error!("Error setting gyro ODR")
     };
@@ -90,9 +93,9 @@ pub async fn read_gyro(
                 };
 
                 let gyro = Vector3::new(
-                    calibrated.x as f32,
-                    calibrated.y as f32,
-                    calibrated.z as f32,
+                    calibrated.x as f32 * SENSITIVITY,
+                    calibrated.y as f32 * SENSITIVITY,
+                    calibrated.z as f32 * SENSITIVITY,
                 );
 
                 gyro_meas.signal(gyro);
